@@ -31,7 +31,7 @@ function keys.parse(keys: string): string
     return result
 end
 
-local tests: {{[string]: string}} = {
+local _tests: {{[string]: string}} = {
     {["Ctrl"] = "29:1 29:0"},
     {["Alt+Tab"] = "56:1 15:1 56:0 15:0"},
     {["Alt, Tab"] = "56:1 56:0 15:1 15:0"},
