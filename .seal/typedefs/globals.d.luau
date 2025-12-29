@@ -1,0 +1,806 @@
+declare function pcall<T, Args...>(protected_callback: (any) -> T, ...: Args...): (boolean, T | error)
+
+declare function ecall<T, A...>(f: (A...) -> T | error): (A...) -> T
+
+declare function p<T...>(...: T...): T...
+
+declare function pp<T...>(...: T...): T...
+
+declare function dp<T...>(...: T...): T...
+
+declare function warn<T...>(...: T...): ()
+
+declare _SEAL_VERSION: string
+
+declare script: {
+    entry_path: string,
+    context: string?,
+    path: (self: any) -> string,
+    parent: (self: any) -> string,
+    project: (self: any) -> string,
+}
+
+declare channel: {
+    send: <D>(self: any, data: D | string) -> (),
+    sendbytes: <D>(self: any, data: buffer) -> (),
+    read: <D>(self: any) -> D?,
+    read_await: <D>(self: any) -> D,
+    readbytes: (self: any) -> buffer?,
+    readbytes_await: (self: any) -> buffer,
+    data: any?,
+}?
+
+--- an error returned from mluau, can be tostringed
+declare class error end
+
+--- Represents the JSON `null`, which can be stored in tables.
+declare extern type null with end
+
+declare class interrupt
+    code: "CtrlC" | "CtrlD"
+end
+
+declare extern type WebsocketMessage with
+    --- Returns `true` if `message:type() == "Binary"`
+    function is_binary(self): boolean
+    --- Returns `true` if `message:type() == "Text"`
+    function is_utf8(self): boolean
+    --- Returns the internal `Tungstenite::Message` type of the message
+    function type(self): "Binary" | "Text" | "Close" | "Ping" | "Pong" | "Frame"
+    --- Returns the message's contents as a `string` without any intermediate utf8 coercion.
+    function as_string(self): string
+    --- Returns the message's contents as a `buffer`
+    function as_bytes(self): buffer
+    --[=[
+        Try to parse the message as JSON, returning an `error` if decoding the message was unsuccessful.
+
+        ## Usage
+
+        ```luau
+        type ReturnType = {
+            field1: string,
+        }
+        local message = websocket:read()
+        if message:is_utf8() then
+            local contents = message:try_json<<ReturnType>>()
+            if typeof(contents) == "error" then
+                print("not a json")
+            else
+                print(contents.field1) -- no type error
+            end
+        end
+        ```
+    ]=]
+    try_json: <T>(self: WebsocketMessage) -> T | error
+    --[=[
+        Converts message to json of the provided `T`
+
+        ## Errors
+
+        - if the message is actually binary
+        - if the message cannot be decoded from json
+    ]=]
+    expect_json: <T>(self: WebsocketMessage) -> T
+    -- function expect_json(self): { [unknown]: unknown }
+end
+
+type WebsocketCloseCode =
+    | "Normal"
+    | "Away"
+    | "Protocol"
+    | "Unsupported"
+    | "Status"
+    | "Abnormal"
+    | "Invalid"
+    | "Policy"
+    | "Size"
+    | "Extension"
+    | "Error"
+    | "Tls"
+    | number
+
+--- weebsocket
+declare extern type Websocket with
+    --[=[
+        Read a (stringified) message from the websocket, blocking until a message is read.
+
+        If the message is json, you'll want to decode it explicitly with `json.decode`, handling any error cases.
+    ]=]
+    function read(self): WebsocketMessage
+    --[=[
+        Send a `message` through the websocket.
+
+        The message can be a `string`, a `buffer` (for binary data), or a table, which will be serialized to json (similarly to http.post/etc)
+    ]=]
+    function send(self, message: string | { [any]: any } | buffer): ()
+    --- Returns `true` if we can currently read from the websocket.
+    function readable(self): boolean
+    --- Returns `true` if we can currently write to the websocket.
+    function sendable(self): boolean
+    function close(self, code: WebsocketCloseCode?, reason: string?): ()
+end
+
+type COMMON_FORMATS =
+    | "ISO_8601"
+    | "RFC_2822"
+    | "RFC_3339"
+    | "SHORT_DATE"
+    | "SHORT_TIME"
+    | "FULL_DATE_TIME"
+    | "LOGGING_24_HR"
+    | "LOGGING_12_HR"
+    | "MM/DD/YY"
+    | "MM/DD/YYYY HH:MM (AM/PM)"
+    | "MM/DD/YY"
+    | "HH:MM (AM/PM)"
+    | "AMERICAN_FULL_DATE_TIME"
+
+declare class DateTime
+    year: number
+    month: number
+    day: number
+    hour: number
+    minute: number
+    second: number
+    millisecond: number
+    weekday: string
+    unix_timestamp: number
+    timezone: string
+    iso: string
+
+    function timespan(self, other: DateTime): TimeSpan
+    function to(self, other: DateTime): TimeSpan
+    function since(self, other: DateTime): TimeSpan
+    function in_timezone(self, timezone: string | IanaTimezone): DateTime
+
+    function format(self, format: string | COMMON_FORMATS): string
+    function display(self): string
+    function rfc_2822(self): string
+    function rfc_3339(self): string
+    function rfc_3339_opts(self): string
+    function iso_8601(self): string
+    function http_date(self): string
+
+    function __add(self, span: TimeSpan): DateTime
+    function __sub(self, span: TimeSpan): DateTime
+    function __eq(self, other: DateTime): boolean
+    function __lt(self, other: DateTime): boolean
+    function __le(self, other: DateTime): boolean
+end
+
+declare class TimeSpan
+    relative_to: DateTime?
+
+    function duration(self): Duration
+    function units(self): {
+        read years: number,
+        read months: number,
+        read days: number,
+        read hours: number,
+        read minutes: number,
+        read seconds: number,
+        read milliseconds: number,
+        read microseconds: number
+    }
+    function __add(self, other: TimeSpan): TimeSpan
+    function __sub(self, other: TimeSpan): TimeSpan
+end
+
+declare class Duration
+    years: number
+    months: number
+    days: number
+    hours: number
+    minutes: number
+    seconds: number
+    milliseconds: number
+    microseconds: number
+    nanoseconds: number
+
+    function abs(self): Duration
+    function __add(self, other: Duration): Duration
+    function __sub(self, other: Duration): Duration
+    function __eq(self, other: Duration): boolean
+    function __lt(self, other: Duration): boolean
+    function __le(self, other: Duration): boolean
+    function display(self): string
+end
+
+
+type IanaTimezone =
+    | "Africa/Abidjan"
+    | "Africa/Accra"
+    | "Africa/Addis_Ababa"
+    | "Africa/Algiers"
+    | "Africa/Asmara"
+    | "Africa/Asmera"
+    | "Africa/Bamako"
+    | "Africa/Bangui"
+    | "Africa/Banjul"
+    | "Africa/Bissau"
+    | "Africa/Blantyre"
+    | "Africa/Brazzaville"
+    | "Africa/Bujumbura"
+    | "Africa/Cairo"
+    | "Africa/Casablanca"
+    | "Africa/Ceuta"
+    | "Africa/Conakry"
+    | "Africa/Dakar"
+    | "Africa/Dar_es_Salaam"
+    | "Africa/Djibouti"
+    | "Africa/Douala"
+    | "Africa/El_Aaiun"
+    | "Africa/Freetown"
+    | "Africa/Gaborone"
+    | "Africa/Harare"
+    | "Africa/Johannesburg"
+    | "Africa/Juba"
+    | "Africa/Kampala"
+    | "Africa/Khartoum"
+    | "Africa/Kigali"
+    | "Africa/Kinshasa"
+    | "Africa/Lagos"
+    | "Africa/Libreville"
+    | "Africa/Lome"
+    | "Africa/Luanda"
+    | "Africa/Lubumbashi"
+    | "Africa/Lusaka"
+    | "Africa/Malabo"
+    | "Africa/Maputo"
+    | "Africa/Maseru"
+    | "Africa/Mbabane"
+    | "Africa/Mogadishu"
+    | "Africa/Monrovia"
+    | "Africa/Nairobi"
+    | "Africa/Ndjamena"
+    | "Africa/Niamey"
+    | "Africa/Nouakchott"
+    | "Africa/Ouagadougou"
+    | "Africa/Porto-Novo"
+    | "Africa/Sao_Tome"
+    | "Africa/Timbuktu"
+    | "Africa/Tripoli"
+    | "Africa/Tunis"
+    | "Africa/Windhoek"
+    | "America/Adak"
+    | "America/Anchorage"
+    | "America/Anguilla"
+    | "America/Antigua"
+    | "America/Araguaina"
+    | "America/Argentina/Buenos_Aires"
+    | "America/Argentina/Catamarca"
+    | "America/Argentina/ComodRivadavia"
+    | "America/Argentina/Cordoba"
+    | "America/Argentina/Jujuy"
+    | "America/Argentina/La_Rioja"
+    | "America/Argentina/Mendoza"
+    | "America/Argentina/Rio_Gallegos"
+    | "America/Argentina/Salta"
+    | "America/Argentina/San_Juan"
+    | "America/Argentina/San_Luis"
+    | "America/Argentina/Tucuman"
+    | "America/Argentina/Ushuaia"
+    | "America/Aruba"
+    | "America/Asuncion"
+    | "America/Atikokan"
+    | "America/Atka"
+    | "America/Bahia"
+    | "America/Bahia_Banderas"
+    | "America/Barbados"
+    | "America/Belem"
+    | "America/Belize"
+    | "America/Blanc-Sablon"
+    | "America/Boa_Vista"
+    | "America/Bogota"
+    | "America/Boise"
+    | "America/Buenos_Aires"
+    | "America/Cambridge_Bay"
+    | "America/Campo_Grande"
+    | "America/Cancun"
+    | "America/Caracas"
+    | "America/Catamarca"
+    | "America/Cayenne"
+    | "America/Cayman"
+    | "America/Chicago"
+    | "America/Chihuahua"
+    | "America/Ciudad_Juarez"
+    | "America/Coral_Harbour"
+    | "America/Cordoba"
+    | "America/Costa_Rica"
+    | "America/Creston"
+    | "America/Cuiaba"
+    | "America/Curacao"
+    | "America/Danmarkshavn"
+    | "America/Dawson"
+    | "America/Dawson_Creek"
+    | "America/Denver"
+    | "America/Detroit"
+    | "America/Dominica"
+    | "America/Edmonton"
+    | "America/Eirunepe"
+    | "America/El_Salvador"
+    | "America/Ensenada"
+    | "America/Fort_Nelson"
+    | "America/Fort_Wayne"
+    | "America/Fortaleza"
+    | "America/Glace_Bay"
+    | "America/Godthab"
+    | "America/Goose_Bay"
+    | "America/Grand_Turk"
+    | "America/Grenada"
+    | "America/Guadeloupe"
+    | "America/Guatemala"
+    | "America/Guayaquil"
+    | "America/Guyana"
+    | "America/Halifax"
+    | "America/Havana"
+    | "America/Hermosillo"
+    | "America/Indiana/Indianapolis"
+    | "America/Indiana/Knox"
+    | "America/Indiana/Marengo"
+    | "America/Indiana/Petersburg"
+    | "America/Indiana/Tell_City"
+    | "America/Indiana/Vevay"
+    | "America/Indiana/Vincennes"
+    | "America/Indiana/Winamac"
+    | "America/Indianapolis"
+    | "America/Inuvik"
+    | "America/Iqaluit"
+    | "America/Jamaica"
+    | "America/Jujuy"
+    | "America/Juneau"
+    | "America/Kentucky/Louisville"
+    | "America/Kentucky/Monticello"
+    | "America/Knox_IN"
+    | "America/Kralendijk"
+    | "America/La_Paz"
+    | "America/Lima"
+    | "America/Los_Angeles"
+    | "America/Louisville"
+    | "America/Lower_Princes"
+    | "America/Maceio"
+    | "America/Managua"
+    | "America/Manaus"
+    | "America/Marigot"
+    | "America/Martinique"
+    | "America/Matamoros"
+    | "America/Mazatlan"
+    | "America/Mendoza"
+    | "America/Menominee"
+    | "America/Merida"
+    | "America/Metlakatla"
+    | "America/Mexico_City"
+    | "America/Miquelon"
+    | "America/Moncton"
+    | "America/Monterrey"
+    | "America/Montevideo"
+    | "America/Montreal"
+    | "America/Montserrat"
+    | "America/Nassau"
+    | "America/New_York"
+    | "America/Nipigon"
+    | "America/Nome"
+    | "America/Noronha"
+    | "America/North_Dakota/Beulah"
+    | "America/North_Dakota/Center"
+    | "America/North_Dakota/New_Salem"
+    | "America/Nuuk"
+    | "America/Ojinaga"
+    | "America/Panama"
+    | "America/Pangnirtung"
+    | "America/Paramaribo"
+    | "America/Phoenix"
+    | "America/Port-au-Prince"
+    | "America/Port_of_Spain"
+    | "America/Porto_Acre"
+    | "America/Porto_Velho"
+    | "America/Puerto_Rico"
+    | "America/Punta_Arenas"
+    | "America/Rainy_River"
+    | "America/Rankin_Inlet"
+    | "America/Recife"
+    | "America/Regina"
+    | "America/Resolute"
+    | "America/Rio_Branco"
+    | "America/Rosario"
+    | "America/Santa_Isabel"
+    | "America/Santarem"
+    | "America/Santiago"
+    | "America/Santo_Domingo"
+    | "America/Sao_Paulo"
+    | "America/Scoresbysund"
+    | "America/Shiprock"
+    | "America/Sitka"
+    | "America/St_Barthelemy"
+    | "America/St_Johns"
+    | "America/St_Kitts"
+    | "America/St_Lucia"
+    | "America/St_Thomas"
+    | "America/St_Vincent"
+    | "America/Swift_Current"
+    | "America/Tegucigalpa"
+    | "America/Thule"
+    | "America/Thunder_Bay"
+    | "America/Tijuana"
+    | "America/Toronto"
+    | "America/Tortola"
+    | "America/Vancouver"
+    | "America/Virgin"
+    | "America/Whitehorse"
+    | "America/Winnipeg"
+    | "America/Yakutat"
+    | "America/Yellowknife"
+    | "Antarctica/Casey"
+    | "Antarctica/Davis"
+    | "Antarctica/DumontDUrville"
+    | "Antarctica/Macquarie"
+    | "Antarctica/Mawson"
+    | "Antarctica/McMurdo"
+    | "Antarctica/Palmer"
+    | "Antarctica/Rothera"
+    | "Antarctica/South_Pole"
+    | "Antarctica/Syowa"
+    | "Antarctica/Troll"
+    | "Antarctica/Vostok"
+    | "Arctic/Longyearbyen"
+    | "Asia/Aden"
+    | "Asia/Almaty"
+    | "Asia/Amman"
+    | "Asia/Anadyr"
+    | "Asia/Aqtau"
+    | "Asia/Aqtobe"
+    | "Asia/Ashgabat"
+    | "Asia/Ashkhabad"
+    | "Asia/Atyrau"
+    | "Asia/Baghdad"
+    | "Asia/Bahrain"
+    | "Asia/Baku"
+    | "Asia/Bangkok"
+    | "Asia/Barnaul"
+    | "Asia/Beirut"
+    | "Asia/Bishkek"
+    | "Asia/Brunei"
+    | "Asia/Calcutta"
+    | "Asia/Chita"
+    | "Asia/Choibalsan"
+    | "Asia/Chongqing"
+    | "Asia/Chungking"
+    | "Asia/Colombo"
+    | "Asia/Dacca"
+    | "Asia/Damascus"
+    | "Asia/Dhaka"
+    | "Asia/Dili"
+    | "Asia/Dubai"
+    | "Asia/Dushanbe"
+    | "Asia/Famagusta"
+    | "Asia/Gaza"
+    | "Asia/Harbin"
+    | "Asia/Hebron"
+    | "Asia/Ho_Chi_Minh"
+    | "Asia/Hong_Kong"
+    | "Asia/Hovd"
+    | "Asia/Irkutsk"
+    | "Asia/Istanbul"
+    | "Asia/Jakarta"
+    | "Asia/Jayapura"
+    | "Asia/Jerusalem"
+    | "Asia/Kabul"
+    | "Asia/Kamchatka"
+    | "Asia/Karachi"
+    | "Asia/Kashgar"
+    | "Asia/Kathmandu"
+    | "Asia/Katmandu"
+    | "Asia/Khandyga"
+    | "Asia/Kolkata"
+    | "Asia/Krasnoyarsk"
+    | "Asia/Kuala_Lumpur"
+    | "Asia/Kuching"
+    | "Asia/Kuwait"
+    | "Asia/Macao"
+    | "Asia/Macau"
+    | "Asia/Magadan"
+    | "Asia/Makassar"
+    | "Asia/Manila"
+    | "Asia/Muscat"
+    | "Asia/Nicosia"
+    | "Asia/Novokuznetsk"
+    | "Asia/Novosibirsk"
+    | "Asia/Omsk"
+    | "Asia/Oral"
+    | "Asia/Phnom_Penh"
+    | "Asia/Pontianak"
+    | "Asia/Pyongyang"
+    | "Asia/Qatar"
+    | "Asia/Qostanay"
+    | "Asia/Qyzylorda"
+    | "Asia/Rangoon"
+    | "Asia/Riyadh"
+    | "Asia/Saigon"
+    | "Asia/Sakhalin"
+    | "Asia/Samarkand"
+    | "Asia/Seoul"
+    | "Asia/Shanghai"
+    | "Asia/Singapore"
+    | "Asia/Srednekolymsk"
+    | "Asia/Taipei"
+    | "Asia/Tashkent"
+    | "Asia/Tbilisi"
+    | "Asia/Tehran"
+    | "Asia/Tel_Aviv"
+    | "Asia/Thimbu"
+    | "Asia/Thimphu"
+    | "Asia/Tokyo"
+    | "Asia/Tomsk"
+    | "Asia/Ujung_Pandang"
+    | "Asia/Ulaanbaatar"
+    | "Asia/Ulan_Bator"
+    | "Asia/Urumqi"
+    | "Asia/Ust-Nera"
+    | "Asia/Vientiane"
+    | "Asia/Vladivostok"
+    | "Asia/Yakutsk"
+    | "Asia/Yangon"
+    | "Asia/Yekaterinburg"
+    | "Asia/Yerevan"
+    | "Atlantic/Azores"
+    | "Atlantic/Bermuda"
+    | "Atlantic/Canary"
+    | "Atlantic/Cape_Verde"
+    | "Atlantic/Faeroe"
+    | "Atlantic/Faroe"
+    | "Atlantic/Jan_Mayen"
+    | "Atlantic/Madeira"
+    | "Atlantic/Reykjavik"
+    | "Atlantic/South_Georgia"
+    | "Atlantic/St_Helena"
+    | "Atlantic/Stanley"
+    | "Australia/ACT"
+    | "Australia/Adelaide"
+    | "Australia/Brisbane"
+    | "Australia/Broken_Hill"
+    | "Australia/Canberra"
+    | "Australia/Currie"
+    | "Australia/Darwin"
+    | "Australia/Eucla"
+    | "Australia/Hobart"
+    | "Australia/LHI"
+    | "Australia/Lindeman"
+    | "Australia/Lord_Howe"
+    | "Australia/Melbourne"
+    | "Australia/NSW"
+    | "Australia/North"
+    | "Australia/Perth"
+    | "Australia/Queensland"
+    | "Australia/South"
+    | "Australia/Sydney"
+    | "Australia/Tasmania"
+    | "Australia/Victoria"
+    | "Australia/West"
+    | "Australia/Yancowinna"
+    | "Brazil/Acre"
+    | "Brazil/DeNoronha"
+    | "Brazil/East"
+    | "Brazil/West"
+    | "CET"
+    | "CST6CDT"
+    | "Canada/Atlantic"
+    | "Canada/Central"
+    | "Canada/Eastern"
+    | "Canada/Mountain"
+    | "Canada/Newfoundland"
+    | "Canada/Pacific"
+    | "Canada/Saskatchewan"
+    | "Canada/Yukon"
+    | "Chile/Continental"
+    | "Chile/EasterIsland"
+    | "Cuba"
+    | "EET"
+    | "EST"
+    | "EST5EDT"
+    | "Egypt"
+    | "Eire"
+    | "Etc/GMT"
+    | "Etc/GMT+0"
+    | "Etc/GMT+1"
+    | "Etc/GMT+10"
+    | "Etc/GMT+11"
+    | "Etc/GMT+12"
+    | "Etc/GMT+2"
+    | "Etc/GMT+3"
+    | "Etc/GMT+4"
+    | "Etc/GMT+5"
+    | "Etc/GMT+6"
+    | "Etc/GMT+7"
+    | "Etc/GMT+8"
+    | "Etc/GMT+9"
+    | "Etc/GMT-0"
+    | "Etc/GMT-1"
+    | "Etc/GMT-10"
+    | "Etc/GMT-11"
+    | "Etc/GMT-12"
+    | "Etc/GMT-13"
+    | "Etc/GMT-14"
+    | "Etc/GMT-2"
+    | "Etc/GMT-3"
+    | "Etc/GMT-4"
+    | "Etc/GMT-5"
+    | "Etc/GMT-6"
+    | "Etc/GMT-7"
+    | "Etc/GMT-8"
+    | "Etc/GMT-9"
+    | "Etc/GMT0"
+    | "Etc/Greenwich"
+    | "Etc/UCT"
+    | "Etc/UTC"
+    | "Etc/Universal"
+    | "Etc/Zulu"
+    | "Europe/Amsterdam"
+    | "Europe/Andorra"
+    | "Europe/Astrakhan"
+    | "Europe/Athens"
+    | "Europe/Belfast"
+    | "Europe/Belgrade"
+    | "Europe/Berlin"
+    | "Europe/Bratislava"
+    | "Europe/Brussels"
+    | "Europe/Bucharest"
+    | "Europe/Budapest"
+    | "Europe/Busingen"
+    | "Europe/Chisinau"
+    | "Europe/Copenhagen"
+    | "Europe/Dublin"
+    | "Europe/Gibraltar"
+    | "Europe/Guernsey"
+    | "Europe/Helsinki"
+    | "Europe/Isle_of_Man"
+    | "Europe/Istanbul"
+    | "Europe/Jersey"
+    | "Europe/Kaliningrad"
+    | "Europe/Kiev"
+    | "Europe/Kirov"
+    | "Europe/Kyiv"
+    | "Europe/Lisbon"
+    | "Europe/Ljubljana"
+    | "Europe/London"
+    | "Europe/Luxembourg"
+    | "Europe/Madrid"
+    | "Europe/Malta"
+    | "Europe/Mariehamn"
+    | "Europe/Minsk"
+    | "Europe/Monaco"
+    | "Europe/Moscow"
+    | "Europe/Nicosia"
+    | "Europe/Oslo"
+    | "Europe/Paris"
+    | "Europe/Podgorica"
+    | "Europe/Prague"
+    | "Europe/Riga"
+    | "Europe/Rome"
+    | "Europe/Samara"
+    | "Europe/San_Marino"
+    | "Europe/Sarajevo"
+    | "Europe/Saratov"
+    | "Europe/Simferopol"
+    | "Europe/Skopje"
+    | "Europe/Sofia"
+    | "Europe/Stockholm"
+    | "Europe/Tallinn"
+    | "Europe/Tirane"
+    | "Europe/Tiraspol"
+    | "Europe/Ulyanovsk"
+    | "Europe/Uzhgorod"
+    | "Europe/Vaduz"
+    | "Europe/Vatican"
+    | "Europe/Vienna"
+    | "Europe/Vilnius"
+    | "Europe/Volgograd"
+    | "Europe/Warsaw"
+    | "Europe/Zagreb"
+    | "Europe/Zaporozhye"
+    | "Europe/Zurich"
+    | "GB"
+    | "GB-Eire"
+    | "GMT"
+    | "GMT+0"
+    | "GMT-0"
+    | "GMT0"
+    | "Greenwich"
+    | "HST"
+    | "Hongkong"
+    | "Iceland"
+    | "Indian/Antananarivo"
+    | "Indian/Chagos"
+    | "Indian/Christmas"
+    | "Indian/Cocos"
+    | "Indian/Comoro"
+    | "Indian/Kerguelen"
+    | "Indian/Mahe"
+    | "Indian/Maldives"
+    | "Indian/Mauritius"
+    | "Indian/Mayotte"
+    | "Indian/Reunion"
+    | "Iran"
+    | "Israel"
+    | "Jamaica"
+    | "Japan"
+    | "Kwajalein"
+    | "Libya"
+    | "MET"
+    | "MST"
+    | "MST7MDT"
+    | "Mexico/BajaNorte"
+    | "Mexico/BajaSur"
+    | "Mexico/General"
+    | "NZ"
+    | "NZ-CHAT"
+    | "Navajo"
+    | "PRC"
+    | "PST8PDT"
+    | "Pacific/Apia"
+    | "Pacific/Auckland"
+    | "Pacific/Bougainville"
+    | "Pacific/Chatham"
+    | "Pacific/Chuuk"
+    | "Pacific/Easter"
+    | "Pacific/Efate"
+    | "Pacific/Enderbury"
+    | "Pacific/Fakaofo"
+    | "Pacific/Fiji"
+    | "Pacific/Funafuti"
+    | "Pacific/Galapagos"
+    | "Pacific/Gambier"
+    | "Pacific/Guadalcanal"
+    | "Pacific/Guam"
+    | "Pacific/Honolulu"
+    | "Pacific/Johnston"
+    | "Pacific/Kanton"
+    | "Pacific/Kiritimati"
+    | "Pacific/Kosrae"
+    | "Pacific/Kwajalein"
+    | "Pacific/Majuro"
+    | "Pacific/Marquesas"
+    | "Pacific/Midway"
+    | "Pacific/Nauru"
+    | "Pacific/Niue"
+    | "Pacific/Norfolk"
+    | "Pacific/Noumea"
+    | "Pacific/Pago_Pago"
+    | "Pacific/Palau"
+    | "Pacific/Pitcairn"
+    | "Pacific/Pohnpei"
+    | "Pacific/Ponape"
+    | "Pacific/Port_Moresby"
+    | "Pacific/Rarotonga"
+    | "Pacific/Saipan"
+    | "Pacific/Samoa"
+    | "Pacific/Tahiti"
+    | "Pacific/Tarawa"
+    | "Pacific/Tongatapu"
+    | "Pacific/Truk"
+    | "Pacific/Wake"
+    | "Pacific/Wallis"
+    | "Pacific/Yap"
+    | "Poland"
+    | "Portugal"
+    | "ROC"
+    | "ROK"
+    | "Singapore"
+    | "Turkey"
+    | "UCT"
+    | "US/Alaska"
+    | "US/Aleutian"
+    | "US/Arizona"
+    | "US/Central"
+    | "US/East-Indiana"
+    | "US/Eastern"
+    | "US/Hawaii"
+    | "US/Indiana-Starke"
+    | "US/Michigan"
+    | "US/Mountain"
+    | "US/Pacific"
+    | "US/Samoa"
+    | "UTC"
+    | "Universal"
+    | "W-SU"
+    | "WET"
+    | "Zulu"
