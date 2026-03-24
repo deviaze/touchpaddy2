@@ -27,13 +27,48 @@ function windows.active_id(): string?
     return nil
 end
 
-function windows.switch(direction: "Left" | "Right", count: number?)
-    count = count or 1
-    if platform.os == "Linux" then
-        keys.send("Alt" .. string.rep("+Tab", count))
-    else
-        keys.send("Alt+Shift" .. string.rep("+Tab", count))
+local ALT = keys.keycode_for_key("Alt")
+
+windows.switch = {}
+windows.switch.started = false
+windows.switch.alt_down = false
+windows.switch.last_tick = os.clock()
+
+function windows.switch.start()
+    if windows.switch.alt_down then
+        warn("ALT already down?")
     end
+    keys.exec(ALT .. ":1")
+    windows.switch.started = true
+    windows.switch.alt_down = true
+end
+
+function windows.switch.update(direction: number)
+    if not windows.switch.alt_down then
+        error("why is alt not down?")
+    end
+    if not windows.switch.started then
+        error("why is switch not started?")
+    end
+    
+    local now = os.clock()
+    local last_tick = windows.switch.last_tick
+    if now - last_tick > 0.25 then
+        if direction == -1 then
+            keys.send("Shift+Tab")
+        elseif direction == 1 then
+            keys.send("Tab")
+        else
+            error(`invalid direction, expected -1 or 1 but got {direction}`)
+        end
+        windows.switch.last_tick = now
+    end
+end
+
+function windows.switch.stop()
+    keys.exec(ALT .. ":0")
+    windows.switch.started = false
+    windows.switch.alt_down = false
 end
 
 function windows.info(pattern: string): WindowInfo?

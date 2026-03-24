@@ -1,7 +1,7 @@
 local config = {
     entry_path = "./src/main.luau",
     test_path = "./tests/run.luau",
-    seal_version = "0.0.6"
+    seal_version = "0.0.7-rc.2"
 }
 
 export type SealConfig = {

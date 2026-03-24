@@ -81,7 +81,6 @@ declare extern type WebsocketMessage with
         - if the message cannot be decoded from json
     ]=]
     expect_json: <T>(self: WebsocketMessage) -> T
-    -- function expect_json(self): { [unknown]: unknown }
 end
 
 type WebsocketCloseCode =

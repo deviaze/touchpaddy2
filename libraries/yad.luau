@@ -91,7 +91,7 @@ local function prompt(options: DialogOptions)
     local child = process.spawn {
         program = `yad {spawn_command}`,
         shell = "sh",
-    }
+    } :: process.PipedChild
 
     local button_response: string?
     repeat

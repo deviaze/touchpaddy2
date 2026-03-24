@@ -31,6 +31,15 @@ function keys.parse(keys: string): string
     return result
 end
 
+function keys.keycode_for_key(key: string): number
+    local keycode = (keycodes[key] or keycodes[string.upper(key)] or keycodes["NUM" .. key]) :: number?
+    if keycode then
+        return keycode
+    else
+        error(`no keycode for {key}?`)
+    end
+end
+
 local _tests: {{[string]: string}} = {
     {["Ctrl"] = "29:1 29:0"},
     {["Alt+Tab"] = "56:1 15:1 56:0 15:0"},
